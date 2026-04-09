@@ -224,6 +224,86 @@ def test_ai_test_mocked(authed_client, monkeypatch):
     assert resp.json()["answer"] == "4"
 
 
+def test_ai_chat_no_actions(authed_client, monkeypatch):
+    async def mock_chat_with_board(board, conversation):
+        return {"message": "Your board looks great!", "actions": []}
+
+    import main
+    monkeypatch.setattr(main, "chat_with_board", mock_chat_with_board)
+    resp = authed_client.post("/api/ai/chat", json={
+        "messages": [{"role": "user", "content": "How does my board look?"}],
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["message"] == "Your board looks great!"
+    assert data["actions"] == []
+    assert len(data["board"]["columns"]) == 5
+
+
+def test_ai_chat_create_card(authed_client, monkeypatch):
+    board_data = authed_client.get("/api/board").json()
+    col_id = board_data["columns"][0]["id"]
+
+    async def mock_chat_with_board(board, conversation):
+        return {
+            "message": "Done! I created a new card.",
+            "actions": [{"type": "create_card", "columnId": col_id, "title": "AI card", "details": "Created by AI"}],
+        }
+
+    import main
+    monkeypatch.setattr(main, "chat_with_board", mock_chat_with_board)
+    resp = authed_client.post("/api/ai/chat", json={
+        "messages": [{"role": "user", "content": "Add a card called AI card to Backlog"}],
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["message"] == "Done! I created a new card."
+    # Board should have the new card
+    card_titles = [c["title"] for c in data["board"]["cards"].values()]
+    assert "AI card" in card_titles
+
+
+def test_ai_chat_delete_card(authed_client, monkeypatch):
+    board_data = authed_client.get("/api/board").json()
+    card_id = board_data["columns"][0]["cardIds"][0]
+
+    async def mock_chat_with_board(board, conversation):
+        return {
+            "message": "Deleted.",
+            "actions": [{"type": "delete_card", "cardId": card_id}],
+        }
+
+    import main
+    monkeypatch.setattr(main, "chat_with_board", mock_chat_with_board)
+    resp = authed_client.post("/api/ai/chat", json={
+        "messages": [{"role": "user", "content": "Delete the first card"}],
+    })
+    assert resp.status_code == 200
+    assert card_id not in resp.json()["board"]["cards"]
+
+
+def test_ai_chat_move_card(authed_client, monkeypatch):
+    board_data = authed_client.get("/api/board").json()
+    card_id = board_data["columns"][0]["cardIds"][0]
+    target_col = board_data["columns"][1]["id"]
+
+    async def mock_chat_with_board(board, conversation):
+        return {
+            "message": "Moved.",
+            "actions": [{"type": "move_card", "cardId": card_id, "columnId": target_col, "position": 0}],
+        }
+
+    import main
+    monkeypatch.setattr(main, "chat_with_board", mock_chat_with_board)
+    resp = authed_client.post("/api/ai/chat", json={
+        "messages": [{"role": "user", "content": "Move first card to Discovery"}],
+    })
+    assert resp.status_code == 200
+    board = resp.json()["board"]
+    assert card_id not in board["columns"][0]["cardIds"]
+    assert card_id in board["columns"][1]["cardIds"]
+
+
 # --- Proxy ---
 
 

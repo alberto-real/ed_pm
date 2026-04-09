@@ -66,6 +66,15 @@ Now allow the backend to make an AI call via OpenRouter. Test connectivity with 
 - Verified in Docker: AI returned "4"
 - 20 backend tests passing (AI tests use mock)
 
-Part 9: Now extend the backend call so that it always calls the AI with the JSON of the Kanban board, plus the user's question (and conversation history). The AI should respond with Structured Outputs that includes the response to the user and optionaly an update to the Kanban. Test thoroughly.
+Part 9: AI chat with structured outputs [DONE]
+
+Now extend the backend call so that it always calls the AI with the JSON of the Kanban board, plus the user's question (and conversation history). The AI should respond with Structured Outputs that includes the response to the user and optionaly an update to the Kanban. Test thoroughly.
+
+- ai.py: chat_with_board() sends system prompt with board JSON + conversation history
+- Structured output: {"message": str, "actions": [{type, ...}]} with JSON response_format
+- Actions supported: create_card, update_card, delete_card, move_card
+- POST /api/ai/chat applies actions to DB and returns updated board
+- Verified in Docker: AI correctly created a card via structured output
+- 24 backend tests passing (4 AI chat tests use mocks)
 
 Part 10: Now add a beautiful sidebar widget to the UI supporting full AI chat, and allowing the LLM (as it determines) to update the Kanban based on its Structured Outputs. If the AI updates the Kanban, then the UI should refresh automatically.

@@ -5,7 +5,7 @@ import httpx
 from fastapi import Cookie, FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
-from ai import chat as ai_chat
+from ai import chat as ai_chat, chat_with_board
 from db import (
     add_card,
     delete_card,
@@ -168,6 +168,47 @@ async def api_ai_test(session: str = Cookie(default="")):
         return JSONResponse({"error": "Not authenticated"}, status_code=401)
     answer = await ai_chat([{"role": "user", "content": "What is 2+2? Reply with just the number."}])
     return {"answer": answer}
+
+
+def _apply_actions(actions: list[dict]):
+    """Apply AI-generated actions to the database."""
+    for action in actions:
+        action_type = action.get("type")
+        if action_type == "create_card":
+            add_card(
+                _parse_id(action["columnId"]),
+                action["title"],
+                action.get("details", ""),
+            )
+        elif action_type == "update_card":
+            update_card(
+                _parse_id(action["cardId"]),
+                action["title"],
+                action.get("details", ""),
+            )
+        elif action_type == "delete_card":
+            delete_card(_parse_id(action["cardId"]))
+        elif action_type == "move_card":
+            move_card(
+                _parse_id(action["cardId"]),
+                _parse_id(action["columnId"]),
+                action.get("position", 0),
+            )
+
+
+@app.post("/api/ai/chat")
+async def api_ai_chat(request: Request, session: str = Cookie(default="")):
+    s = _get_session(session)
+    if not s:
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+    body = await request.json()
+    conversation = body.get("messages", [])
+    board = get_board(s["board_id"])
+    result = await chat_with_board(board, conversation)
+    if result["actions"]:
+        _apply_actions(result["actions"])
+        board = get_board(s["board_id"])
+    return {"message": result["message"], "actions": result["actions"], "board": board}
 
 
 # --- Proxy to Next.js ---
