@@ -76,10 +76,13 @@ export const ChatSidebar = ({ onBoardUpdate }: ChatSidebarProps) => {
         <button
           type="button"
           onClick={() => setOpen(false)}
-          className="rounded-full border border-[var(--stroke)] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[var(--gray-text)] transition hover:text-[var(--navy-dark)]"
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--stroke)] text-[var(--gray-text)] transition hover:text-[var(--navy-dark)]"
           aria-label="Close chat"
         >
-          Close
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 6L6 18" />
+            <path d="M6 6l12 12" />
+          </svg>
         </button>
       </header>
 
