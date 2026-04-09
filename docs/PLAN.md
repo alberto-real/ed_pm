@@ -57,9 +57,14 @@ Now have the frontend actually use the backend API, so that the app is a proper 
 - Data persists across container restarts (verified)
 - 29 tests passing (18 backend pytest + 11 frontend Vitest)
 
-Part 8: AI connectivity
+Part 8: AI connectivity [DONE]
 
 Now allow the backend to make an AI call via OpenRouter. Test connectivity with a simple "2+2" test and ensure the AI call is working.
+
+- ai.py: OpenRouter client using httpx, model openai/gpt-oss-120b:free
+- POST /api/ai/test endpoint sends "What is 2+2?" and returns the answer
+- Verified in Docker: AI returned "4"
+- 20 backend tests passing (AI tests use mock)
 
 Part 9: Now extend the backend call so that it always calls the AI with the JSON of the Kanban board, plus the user's question (and conversation history). The AI should respond with Structured Outputs that includes the response to the user and optionaly an update to the Kanban. Test thoroughly.
 

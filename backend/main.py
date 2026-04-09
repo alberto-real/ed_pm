@@ -5,6 +5,7 @@ import httpx
 from fastapi import Cookie, FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
+from ai import chat as ai_chat
 from db import (
     add_card,
     delete_card,
@@ -155,6 +156,18 @@ async def api_rename_column(column_id: str, request: Request, session: str = Coo
     if not rename_column(_parse_id(column_id), body["title"]):
         return JSONResponse({"error": "Column not found"}, status_code=404)
     return {"ok": True}
+
+
+# --- AI ---
+
+
+@app.post("/api/ai/test")
+async def api_ai_test(session: str = Cookie(default="")):
+    s = _get_session(session)
+    if not s:
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+    answer = await ai_chat([{"role": "user", "content": "What is 2+2? Reply with just the number."}])
+    return {"answer": answer}
 
 
 # --- Proxy to Next.js ---

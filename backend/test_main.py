@@ -205,6 +205,25 @@ def test_rename_nonexistent_column(authed_client):
     assert resp.status_code == 404
 
 
+# --- AI ---
+
+
+def test_ai_test_unauthenticated(client):
+    resp = client.post("/api/ai/test")
+    assert resp.status_code == 401
+
+
+def test_ai_test_mocked(authed_client, monkeypatch):
+    async def mock_chat(messages):
+        return "4"
+
+    import main
+    monkeypatch.setattr(main, "ai_chat", mock_chat)
+    resp = authed_client.post("/api/ai/test")
+    assert resp.status_code == 200
+    assert resp.json()["answer"] == "4"
+
+
 # --- Proxy ---
 
 
