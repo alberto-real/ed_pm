@@ -13,6 +13,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
+import { ChatSidebar } from "@/components/ChatSidebar";
 import { KanbanColumn } from "@/components/KanbanColumn";
 import { KanbanCardPreview } from "@/components/KanbanCardPreview";
 import { moveCard as localMoveCard, type BoardData } from "@/lib/kanban";
@@ -214,6 +215,7 @@ export const KanbanBoard = ({ username, onLogout }: KanbanBoardProps = {}) => {
           </DragOverlay>
         </DndContext>
       </main>
+      <ChatSidebar onBoardUpdate={setBoard} />
     </div>
   );
 };

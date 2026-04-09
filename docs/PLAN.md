@@ -77,4 +77,12 @@ Now extend the backend call so that it always calls the AI with the JSON of the 
 - Verified in Docker: AI correctly created a card via structured output
 - 24 backend tests passing (4 AI chat tests use mocks)
 
-Part 10: Now add a beautiful sidebar widget to the UI supporting full AI chat, and allowing the LLM (as it determines) to update the Kanban based on its Structured Outputs. If the AI updates the Kanban, then the UI should refresh automatically.
+Part 10: AI chat sidebar [DONE]
+
+Now add a beautiful sidebar widget to the UI supporting full AI chat, and allowing the LLM (as it determines) to update the Kanban based on its Structured Outputs. If the AI updates the Kanban, then the UI should refresh automatically.
+
+- ChatSidebar component: slide-out panel with message bubbles, input, loading state
+- Purple floating button in bottom-right to toggle open/closed
+- Sends full conversation history to /api/ai/chat
+- When AI returns actions, board state refreshes automatically via onBoardUpdate callback
+- 39 tests passing (24 backend pytest + 15 frontend Vitest)

@@ -1,5 +1,16 @@
 import type { BoardData, Card } from "./kanban";
 
+export type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export type AiChatResponse = {
+  message: string;
+  actions: Array<Record<string, unknown>>;
+  board: BoardData;
+};
+
 async function request(url: string, options?: RequestInit) {
   const resp = await fetch(url, {
     ...options,
@@ -57,5 +68,14 @@ export async function renameColumn(
   await request(`/api/columns/${columnId}`, {
     method: "PUT",
     body: JSON.stringify({ title }),
+  });
+}
+
+export async function aiChat(
+  messages: ChatMessage[]
+): Promise<AiChatResponse> {
+  return request("/api/ai/chat", {
+    method: "POST",
+    body: JSON.stringify({ messages }),
   });
 }

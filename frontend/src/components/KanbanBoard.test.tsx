@@ -26,6 +26,7 @@ vi.mock("@/lib/api", () => ({
   moveCard: vi.fn(() => Promise.resolve()),
   renameColumn: vi.fn(() => Promise.resolve()),
   updateCard: vi.fn(() => Promise.resolve()),
+  aiChat: vi.fn(() => Promise.resolve({ message: "", actions: [], board: {} })),
 }));
 
 const mockLogout = vi.fn();
