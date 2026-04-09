@@ -37,6 +37,11 @@ def _get_session(session: str) -> dict | None:
     return sessions.get(session)
 
 
+def _parse_id(prefixed_id: str) -> int:
+    """Strip 'col-' or 'card-' prefix and return the integer ID."""
+    return int(prefixed_id.split("-", 1)[-1])
+
+
 # --- Health ---
 
 
@@ -99,41 +104,41 @@ async def api_add_card(request: Request, session: str = Cookie(default="")):
     if not s:
         return JSONResponse({"error": "Not authenticated"}, status_code=401)
     body = await request.json()
-    column_id = int(body["columnId"])
+    column_id = _parse_id(body["columnId"])
     card = add_card(column_id, body["title"], body.get("details", ""))
     return card
 
 
 @app.put("/api/cards/{card_id}")
-async def api_update_card(card_id: int, request: Request, session: str = Cookie(default="")):
+async def api_update_card(card_id: str, request: Request, session: str = Cookie(default="")):
     s = _get_session(session)
     if not s:
         return JSONResponse({"error": "Not authenticated"}, status_code=401)
     body = await request.json()
-    if not update_card(card_id, body["title"], body.get("details", "")):
+    if not update_card(_parse_id(card_id), body["title"], body.get("details", "")):
         return JSONResponse({"error": "Card not found"}, status_code=404)
     return {"ok": True}
 
 
 @app.delete("/api/cards/{card_id}")
-def api_delete_card(card_id: int, session: str = Cookie(default="")):
+def api_delete_card(card_id: str, session: str = Cookie(default="")):
     s = _get_session(session)
     if not s:
         return JSONResponse({"error": "Not authenticated"}, status_code=401)
-    if not delete_card(card_id):
+    if not delete_card(_parse_id(card_id)):
         return JSONResponse({"error": "Card not found"}, status_code=404)
     return {"ok": True}
 
 
 @app.post("/api/cards/{card_id}/move")
-async def api_move_card(card_id: int, request: Request, session: str = Cookie(default="")):
+async def api_move_card(card_id: str, request: Request, session: str = Cookie(default="")):
     s = _get_session(session)
     if not s:
         return JSONResponse({"error": "Not authenticated"}, status_code=401)
     body = await request.json()
-    target_column_id = int(body["columnId"])
+    target_column_id = _parse_id(body["columnId"])
     position = int(body["position"])
-    if not move_card(card_id, target_column_id, position):
+    if not move_card(_parse_id(card_id), target_column_id, position):
         return JSONResponse({"error": "Card not found"}, status_code=404)
     return {"ok": True}
 
@@ -142,12 +147,12 @@ async def api_move_card(card_id: int, request: Request, session: str = Cookie(de
 
 
 @app.put("/api/columns/{column_id}")
-async def api_rename_column(column_id: int, request: Request, session: str = Cookie(default="")):
+async def api_rename_column(column_id: str, request: Request, session: str = Cookie(default="")):
     s = _get_session(session)
     if not s:
         return JSONResponse({"error": "Not authenticated"}, status_code=401)
     body = await request.json()
-    if not rename_column(column_id, body["title"]):
+    if not rename_column(_parse_id(column_id), body["title"]):
         return JSONResponse({"error": "Column not found"}, status_code=404)
     return {"ok": True}
 

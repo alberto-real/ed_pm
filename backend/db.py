@@ -6,6 +6,27 @@ DB_PATH = os.environ.get("DB_PATH", str(Path(__file__).parent.parent / "data" / 
 
 DEFAULT_COLUMNS = ["Backlog", "Discovery", "In Progress", "Review", "Done"]
 
+SEED_CARDS = {
+    "Backlog": [
+        ("Align roadmap themes", "Draft quarterly themes with impact statements and metrics."),
+        ("Gather customer signals", "Review support tags, sales notes, and churn feedback."),
+    ],
+    "Discovery": [
+        ("Prototype analytics view", "Sketch initial dashboard layout and key drill-downs."),
+    ],
+    "In Progress": [
+        ("Refine status language", "Standardize column labels and tone across the board."),
+        ("Design card layout", "Add hierarchy and spacing for scanning dense lists."),
+    ],
+    "Review": [
+        ("QA micro-interactions", "Verify hover, focus, and loading states."),
+    ],
+    "Done": [
+        ("Ship marketing page", "Final copy approved and asset pack delivered."),
+        ("Close onboarding sprint", "Document release notes and share internally."),
+    ],
+}
+
 
 def get_conn() -> sqlite3.Connection:
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
@@ -62,10 +83,16 @@ def ensure_user_board(username: str) -> tuple[int, int]:
         cur = conn.execute("INSERT INTO boards (user_id) VALUES (?)", (user_id,))
         board_id = cur.lastrowid
         for i, title in enumerate(DEFAULT_COLUMNS):
-            conn.execute(
+            cur = conn.execute(
                 "INSERT INTO columns (board_id, title, position) VALUES (?, ?, ?)",
                 (board_id, title, i),
             )
+            col_id = cur.lastrowid
+            for j, (card_title, card_details) in enumerate(SEED_CARDS.get(title, [])):
+                conn.execute(
+                    "INSERT INTO cards (column_id, title, details, position) VALUES (?, ?, ?, ?)",
+                    (col_id, card_title, card_details, j),
+                )
     conn.commit()
     conn.close()
     return user_id, board_id
@@ -86,10 +113,10 @@ def get_board(board_id: int) -> dict:
         ).fetchall()
         card_ids = []
         for c in col_cards:
-            card_id = str(c["id"])
+            card_id = f"card-{c['id']}"
             card_ids.append(card_id)
             cards[card_id] = {"id": card_id, "title": c["title"], "details": c["details"]}
-        columns.append({"id": str(col["id"]), "title": col["title"], "cardIds": card_ids})
+        columns.append({"id": f"col-{col['id']}", "title": col["title"], "cardIds": card_ids})
     conn.close()
     return {"columns": columns, "cards": cards}
 
@@ -107,7 +134,7 @@ def add_card(column_id: int, title: str, details: str) -> dict:
     card_id = cur.lastrowid
     conn.commit()
     conn.close()
-    return {"id": str(card_id), "title": title, "details": details}
+    return {"id": f"card-{card_id}", "title": title, "details": details}
 
 
 def update_card(card_id: int, title: str, details: str) -> bool:

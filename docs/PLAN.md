@@ -47,9 +47,15 @@ Now add API routes to allow the backend to read and change the Kanban for a give
 - Auth now creates DB user + default board on first login
 - 18 backend tests passing
 
-Part 7: Frontend + Backend
+Part 7: Frontend + Backend [DONE]
 
 Now have the frontend actually use the backend API, so that the app is a proper persistent Kanban board. Test very throughly.
+
+- API client module (lib/api.ts) for all backend calls
+- KanbanBoard fetches board from /api/board on mount
+- Add/delete/move cards and rename columns call the API with optimistic local updates
+- Data persists across container restarts (verified)
+- 29 tests passing (18 backend pytest + 11 frontend Vitest)
 
 Part 8: AI connectivity
 

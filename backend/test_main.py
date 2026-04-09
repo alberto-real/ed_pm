@@ -84,14 +84,15 @@ def test_get_board_unauthenticated(client):
     assert resp.status_code == 401
 
 
-def test_get_board_returns_default_columns(authed_client):
+def test_get_board_returns_default_columns_with_seed_cards(authed_client):
     resp = authed_client.get("/api/board")
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["columns"]) == 5
     titles = [c["title"] for c in data["columns"]]
     assert titles == ["Backlog", "Discovery", "In Progress", "Review", "Done"]
-    assert data["cards"] == {}
+    assert len(data["columns"][0]["cardIds"]) == 2
+    assert len(data["cards"]) == 8
 
 
 # --- Cards ---
@@ -173,14 +174,18 @@ def test_move_card_between_columns(authed_client):
 
 def test_move_card_within_column(authed_client):
     board = authed_client.get("/api/board").json()
-    col_id = board["columns"][0]["id"]
+    # Use a column with no seed cards (In Progress has 2, but Discovery has 1)
+    # Use column index 3 (Review) which has 1 seed card
+    col_id = board["columns"][3]["id"]
     c1 = authed_client.post("/api/cards", json={"columnId": col_id, "title": "A", "details": ""}).json()
     c2 = authed_client.post("/api/cards", json={"columnId": col_id, "title": "B", "details": ""}).json()
-    c3 = authed_client.post("/api/cards", json={"columnId": col_id, "title": "C", "details": ""}).json()
-    # Move C to position 0 (top)
-    authed_client.post(f"/api/cards/{c3['id']}/move", json={"columnId": col_id, "position": 0})
+    # Move B to position 0 (top)
+    authed_client.post(f"/api/cards/{c2['id']}/move", json={"columnId": col_id, "position": 0})
     board = authed_client.get("/api/board").json()
-    assert board["columns"][0]["cardIds"] == [c3["id"], c1["id"], c2["id"]]
+    review_ids = board["columns"][3]["cardIds"]
+    # B should be first, then the seed card, then A
+    assert review_ids[0] == c2["id"]
+    assert review_ids[-1] == c1["id"]
 
 
 # --- Columns ---
