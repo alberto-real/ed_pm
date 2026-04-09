@@ -2,6 +2,8 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { KanbanBoard } from "@/components/KanbanBoard";
 
+const mockLogout = vi.fn();
+
 const getFirstColumn = () => screen.getAllByTestId(/column-/i)[0];
 
 describe("KanbanBoard", () => {
@@ -42,5 +44,17 @@ describe("KanbanBoard", () => {
     await userEvent.click(deleteButton);
 
     expect(within(column).queryByText("New card")).not.toBeInTheDocument();
+  });
+
+  it("shows sign out button when username is provided", () => {
+    render(<KanbanBoard username="user" onLogout={mockLogout} />);
+    expect(screen.getByText("user")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument();
+  });
+
+  it("calls onLogout when sign out is clicked", async () => {
+    render(<KanbanBoard username="user" onLogout={mockLogout} />);
+    await userEvent.click(screen.getByRole("button", { name: /sign out/i }));
+    expect(mockLogout).toHaveBeenCalled();
   });
 });

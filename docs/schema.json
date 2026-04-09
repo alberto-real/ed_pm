@@ -1,0 +1,37 @@
+{
+  "tables": {
+    "users": {
+      "columns": {
+        "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+        "username": "TEXT NOT NULL UNIQUE"
+      }
+    },
+    "boards": {
+      "columns": {
+        "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+        "user_id": "INTEGER NOT NULL REFERENCES users(id)",
+        "title": "TEXT NOT NULL DEFAULT 'My Board'"
+      }
+    },
+    "columns": {
+      "columns": {
+        "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+        "board_id": "INTEGER NOT NULL REFERENCES boards(id) ON DELETE CASCADE",
+        "title": "TEXT NOT NULL",
+        "position": "INTEGER NOT NULL"
+      }
+    },
+    "cards": {
+      "columns": {
+        "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+        "column_id": "INTEGER NOT NULL REFERENCES columns(id) ON DELETE CASCADE",
+        "title": "TEXT NOT NULL",
+        "details": "TEXT NOT NULL DEFAULT ''",
+        "position": "INTEGER NOT NULL"
+      }
+    }
+  },
+  "seed": {
+    "description": "On first login, create a user, a default board with 5 columns (Backlog, Discovery, In Progress, Review, Done), and no cards."
+  }
+}
