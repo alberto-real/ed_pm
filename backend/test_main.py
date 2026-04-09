@@ -1,5 +1,6 @@
 import os
 import tempfile
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -7,7 +8,7 @@ from fastapi.testclient import TestClient
 # Use a temp DB for each test
 os.environ["DB_PATH"] = ""
 
-from db import init_db
+from db import ensure_user_board, get_board, init_db
 from main import app, sessions
 
 
@@ -76,6 +77,15 @@ def test_logout(authed_client):
     assert resp.status_code == 401
 
 
+def test_session_expiry(authed_client, monkeypatch):
+    """Expired sessions should be rejected."""
+    # Find the session token and set its created_at to the past
+    for token, data in sessions.items():
+        data["created_at"] = time.time() - 90000  # 25 hours ago
+    resp = authed_client.get("/api/me")
+    assert resp.status_code == 401
+
+
 # --- Board ---
 
 
@@ -132,7 +142,7 @@ def test_update_card(authed_client):
 
 
 def test_update_nonexistent_card(authed_client):
-    resp = authed_client.put("/api/cards/9999", json={"title": "X", "details": ""})
+    resp = authed_client.put("/api/cards/card-9999", json={"title": "X", "details": ""})
     assert resp.status_code == 404
 
 
@@ -149,7 +159,7 @@ def test_delete_card(authed_client):
 
 
 def test_delete_nonexistent_card(authed_client):
-    resp = authed_client.delete("/api/cards/9999")
+    resp = authed_client.delete("/api/cards/card-9999")
     assert resp.status_code == 404
 
 
@@ -201,7 +211,7 @@ def test_rename_column(authed_client):
 
 
 def test_rename_nonexistent_column(authed_client):
-    resp = authed_client.put("/api/columns/9999", json={"title": "X"})
+    resp = authed_client.put("/api/columns/col-9999", json={"title": "X"})
     assert resp.status_code == 404
 
 
@@ -310,3 +320,153 @@ def test_ai_chat_move_card(authed_client, monkeypatch):
 def test_proxy_root_returns_error_when_nextjs_down(client):
     resp = client.get("/")
     assert resp.status_code == 502 or resp.status_code == 500
+
+
+# --- Authorization (cross-user isolation) ---
+
+
+def test_cannot_update_other_users_card(authed_client):
+    """User cannot update a card belonging to another user's board."""
+    _, board2_id = ensure_user_board("user2")
+    board2 = get_board(board2_id)
+    card_id = board2["columns"][0]["cardIds"][0]
+    resp = authed_client.put(f"/api/cards/{card_id}", json={"title": "Hacked", "details": ""})
+    assert resp.status_code == 404
+
+
+def test_cannot_delete_other_users_card(authed_client):
+    """User cannot delete a card belonging to another user's board."""
+    _, board2_id = ensure_user_board("user2")
+    board2 = get_board(board2_id)
+    card_id = board2["columns"][0]["cardIds"][0]
+    resp = authed_client.delete(f"/api/cards/{card_id}")
+    assert resp.status_code == 404
+    # Verify card still exists
+    board2_after = get_board(board2_id)
+    assert card_id in board2_after["columns"][0]["cardIds"]
+
+
+def test_cannot_move_other_users_card(authed_client):
+    """User cannot move a card belonging to another user's board."""
+    _, board2_id = ensure_user_board("user2")
+    board2 = get_board(board2_id)
+    card_id = board2["columns"][0]["cardIds"][0]
+    target_col = board2["columns"][1]["id"]
+    resp = authed_client.post(f"/api/cards/{card_id}/move", json={
+        "columnId": target_col, "position": 0,
+    })
+    assert resp.status_code == 404
+
+
+def test_cannot_add_card_to_other_users_column(authed_client):
+    """User cannot add a card to another user's column."""
+    _, board2_id = ensure_user_board("user2")
+    board2 = get_board(board2_id)
+    col_id = board2["columns"][0]["id"]
+    resp = authed_client.post("/api/cards", json={
+        "columnId": col_id, "title": "Injected", "details": "",
+    })
+    assert resp.status_code == 404
+
+
+def test_cannot_rename_other_users_column(authed_client):
+    """User cannot rename a column belonging to another user's board."""
+    _, board2_id = ensure_user_board("user2")
+    board2 = get_board(board2_id)
+    col_id = board2["columns"][0]["id"]
+    resp = authed_client.put(f"/api/columns/{col_id}", json={"title": "Hacked"})
+    assert resp.status_code == 404
+    # Verify column name unchanged
+    board2_after = get_board(board2_id)
+    assert board2_after["columns"][0]["title"] == "Backlog"
+
+
+# --- Malformed input ---
+
+
+def test_add_card_missing_fields(authed_client):
+    resp = authed_client.post("/api/cards", json={})
+    assert resp.status_code == 422
+
+
+def test_add_card_missing_title(authed_client):
+    resp = authed_client.post("/api/cards", json={"columnId": "col-1"})
+    assert resp.status_code == 422
+
+
+def test_update_card_missing_title(authed_client):
+    resp = authed_client.put("/api/cards/card-1", json={})
+    assert resp.status_code == 422
+
+
+def test_move_card_missing_fields(authed_client):
+    resp = authed_client.post("/api/cards/card-1/move", json={})
+    assert resp.status_code == 422
+
+
+def test_rename_column_missing_title(authed_client):
+    resp = authed_client.put("/api/columns/col-1", json={})
+    assert resp.status_code == 422
+
+
+def test_login_missing_fields(client):
+    resp = client.post("/api/login", json={})
+    assert resp.status_code == 422
+
+
+def test_ai_chat_missing_messages(authed_client):
+    resp = authed_client.post("/api/ai/chat", json={})
+    assert resp.status_code == 422
+
+
+def test_add_card_invalid_json(authed_client):
+    resp = authed_client.post(
+        "/api/cards",
+        content=b"not json",
+        headers={"Content-Type": "application/json"},
+    )
+    assert resp.status_code == 422
+
+
+# --- AI action validation ---
+
+
+def test_ai_chat_skips_malformed_actions(authed_client, monkeypatch):
+    """Actions with missing required fields should be skipped without crashing."""
+    async def mock_chat_with_board(board, conversation):
+        return {
+            "message": "Tried to do things.",
+            "actions": [
+                {"type": "create_card"},  # missing columnId and title
+                {"type": "unknown_action"},  # unknown type
+                {"type": "delete_card"},  # missing cardId
+            ],
+        }
+
+    import main
+    monkeypatch.setattr(main, "chat_with_board", mock_chat_with_board)
+    resp = authed_client.post("/api/ai/chat", json={
+        "messages": [{"role": "user", "content": "Do stuff"}],
+    })
+    assert resp.status_code == 200
+    # Board should be unchanged (8 seed cards)
+    assert len(resp.json()["board"]["cards"]) == 8
+
+
+def test_ai_chat_skips_invalid_id_in_action(authed_client, monkeypatch):
+    """Actions with non-numeric IDs should be skipped without crashing."""
+    async def mock_chat_with_board(board, conversation):
+        return {
+            "message": "Tried.",
+            "actions": [
+                {"type": "delete_card", "cardId": "card-abc"},  # non-numeric
+            ],
+        }
+
+    import main
+    monkeypatch.setattr(main, "chat_with_board", mock_chat_with_board)
+    resp = authed_client.post("/api/ai/chat", json={
+        "messages": [{"role": "user", "content": "Do stuff"}],
+    })
+    assert resp.status_code == 200
+    assert len(resp.json()["board"]["cards"]) == 8

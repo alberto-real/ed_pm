@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   DndContext,
   DragOverlay,
+  KeyboardSensor,
   PointerSensor,
   pointerWithin,
   rectIntersection,
@@ -13,6 +14,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
+import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { ChatSidebar } from "@/components/ChatSidebar";
 import { KanbanColumn } from "@/components/KanbanColumn";
 import { KanbanCardPreview } from "@/components/KanbanCardPreview";
@@ -48,10 +50,11 @@ export const KanbanBoard = ({ username, onLogout }: KanbanBoardProps = {}) => {
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 6 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
     })
   );
-
-  const cardsById = useMemo(() => board.cards, [board.cards]);
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveCardId(event.active.id as string);
@@ -98,16 +101,20 @@ export const KanbanBoard = ({ username, onLogout }: KanbanBoardProps = {}) => {
     title: string,
     details: string
   ) => {
-    const card = await api.addCard(columnId, title, details || "No details yet.");
-    setBoard((prev) => ({
-      ...prev,
-      cards: { ...prev.cards, [card.id]: card },
-      columns: prev.columns.map((column) =>
-        column.id === columnId
-          ? { ...column, cardIds: [...column.cardIds, card.id] }
-          : column
-      ),
-    }));
+    try {
+      const card = await api.addCard(columnId, title, details || "No details yet.");
+      setBoard((prev) => ({
+        ...prev,
+        cards: { ...prev.cards, [card.id]: card },
+        columns: prev.columns.map((column) =>
+          column.id === columnId
+            ? { ...column, cardIds: [...column.cardIds, card.id] }
+            : column
+        ),
+      }));
+    } catch {
+      reload();
+    }
   };
 
   const handleDeleteCard = async (columnId: string, cardId: string) => {
@@ -126,7 +133,7 @@ export const KanbanBoard = ({ username, onLogout }: KanbanBoardProps = {}) => {
     api.deleteCard(cardId).catch(reload);
   };
 
-  const activeCard = activeCardId ? cardsById[activeCardId] : null;
+  const activeCard = activeCardId ? board.cards[activeCardId] : null;
 
   if (loading) return null;
 
@@ -199,7 +206,7 @@ export const KanbanBoard = ({ username, onLogout }: KanbanBoardProps = {}) => {
               <KanbanColumn
                 key={column.id}
                 column={column}
-                cards={column.cardIds.map((cardId) => board.cards[cardId])}
+                cards={column.cardIds.map((cardId) => board.cards[cardId]).filter(Boolean)}
                 onRename={handleRenameColumn}
                 onAddCard={handleAddCard}
                 onDeleteCard={handleDeleteCard}

@@ -70,30 +70,30 @@ def init_db():
 def ensure_user_board(username: str) -> tuple[int, int]:
     """Return (user_id, board_id), creating them if needed."""
     conn = get_conn()
-    row = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
-    if row:
-        user_id = row["id"]
-    else:
-        cur = conn.execute("INSERT INTO users (username) VALUES (?)", (username,))
-        user_id = cur.lastrowid
-    board = conn.execute("SELECT id FROM boards WHERE user_id = ?", (user_id,)).fetchone()
-    if board:
-        board_id = board["id"]
-    else:
-        cur = conn.execute("INSERT INTO boards (user_id) VALUES (?)", (user_id,))
-        board_id = cur.lastrowid
-        for i, title in enumerate(DEFAULT_COLUMNS):
-            cur = conn.execute(
-                "INSERT INTO columns (board_id, title, position) VALUES (?, ?, ?)",
-                (board_id, title, i),
-            )
-            col_id = cur.lastrowid
-            for j, (card_title, card_details) in enumerate(SEED_CARDS.get(title, [])):
-                conn.execute(
-                    "INSERT INTO cards (column_id, title, details, position) VALUES (?, ?, ?, ?)",
-                    (col_id, card_title, card_details, j),
+    with conn:
+        row = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+        if row:
+            user_id = row["id"]
+        else:
+            cur = conn.execute("INSERT INTO users (username) VALUES (?)", (username,))
+            user_id = cur.lastrowid
+        board = conn.execute("SELECT id FROM boards WHERE user_id = ?", (user_id,)).fetchone()
+        if board:
+            board_id = board["id"]
+        else:
+            cur = conn.execute("INSERT INTO boards (user_id) VALUES (?)", (user_id,))
+            board_id = cur.lastrowid
+            for i, title in enumerate(DEFAULT_COLUMNS):
+                cur = conn.execute(
+                    "INSERT INTO columns (board_id, title, position) VALUES (?, ?, ?)",
+                    (board_id, title, i),
                 )
-    conn.commit()
+                col_id = cur.lastrowid
+                for j, (card_title, card_details) in enumerate(SEED_CARDS.get(title, [])):
+                    conn.execute(
+                        "INSERT INTO cards (column_id, title, details, position) VALUES (?, ?, ?, ?)",
+                        (col_id, card_title, card_details, j),
+                    )
     conn.close()
     return user_id, board_id
 
@@ -121,76 +121,131 @@ def get_board(board_id: int) -> dict:
     return {"columns": columns, "cards": cards}
 
 
-def add_card(column_id: int, title: str, details: str) -> dict:
+def _owns_column(conn: sqlite3.Connection, board_id: int, column_id: int) -> bool:
+    row = conn.execute(
+        "SELECT id FROM columns WHERE id = ? AND board_id = ?",
+        (column_id, board_id),
+    ).fetchone()
+    return row is not None
+
+
+def _owns_card(conn: sqlite3.Connection, board_id: int, card_id: int) -> bool:
+    row = conn.execute(
+        "SELECT c.id FROM cards c JOIN columns col ON c.column_id = col.id "
+        "WHERE c.id = ? AND col.board_id = ?",
+        (card_id, board_id),
+    ).fetchone()
+    return row is not None
+
+
+def add_card(board_id: int, column_id: int, title: str, details: str) -> dict | None:
     conn = get_conn()
-    max_pos = conn.execute(
-        "SELECT COALESCE(MAX(position), -1) as m FROM cards WHERE column_id = ?",
-        (column_id,),
-    ).fetchone()["m"]
-    cur = conn.execute(
-        "INSERT INTO cards (column_id, title, details, position) VALUES (?, ?, ?, ?)",
-        (column_id, title, details, max_pos + 1),
-    )
-    card_id = cur.lastrowid
-    conn.commit()
-    conn.close()
+    card_id = None
+    try:
+        with conn:
+            if not _owns_column(conn, board_id, column_id):
+                return None
+            max_pos = conn.execute(
+                "SELECT COALESCE(MAX(position), -1) as m FROM cards WHERE column_id = ?",
+                (column_id,),
+            ).fetchone()["m"]
+            cur = conn.execute(
+                "INSERT INTO cards (column_id, title, details, position) VALUES (?, ?, ?, ?)",
+                (column_id, title, details, max_pos + 1),
+            )
+            card_id = cur.lastrowid
+    finally:
+        conn.close()
     return {"id": f"card-{card_id}", "title": title, "details": details}
 
 
-def update_card(card_id: int, title: str, details: str) -> bool:
+def update_card(board_id: int, card_id: int, title: str, details: str) -> bool:
     conn = get_conn()
-    cur = conn.execute(
-        "UPDATE cards SET title = ?, details = ? WHERE id = ?",
-        (title, details, card_id),
-    )
-    conn.commit()
-    changed = cur.rowcount > 0
-    conn.close()
-    return changed
-
-
-def delete_card(card_id: int) -> bool:
-    conn = get_conn()
-    cur = conn.execute("DELETE FROM cards WHERE id = ?", (card_id,))
-    conn.commit()
-    changed = cur.rowcount > 0
-    conn.close()
-    return changed
-
-
-def move_card(card_id: int, target_column_id: int, position: int):
-    conn = get_conn()
-    # Get current column
-    row = conn.execute("SELECT column_id FROM cards WHERE id = ?", (card_id,)).fetchone()
-    if not row:
+    try:
+        with conn:
+            if not _owns_card(conn, board_id, card_id):
+                return False
+            conn.execute(
+                "UPDATE cards SET title = ?, details = ? WHERE id = ?",
+                (title, details, card_id),
+            )
+    finally:
         conn.close()
-        return False
-    old_column_id = row["column_id"]
-    # Remove from old position
-    old_pos = conn.execute("SELECT position FROM cards WHERE id = ?", (card_id,)).fetchone()["position"]
-    conn.execute(
-        "UPDATE cards SET position = position - 1 WHERE column_id = ? AND position > ?",
-        (old_column_id, old_pos),
-    )
-    # Make room in target column
-    conn.execute(
-        "UPDATE cards SET position = position + 1 WHERE column_id = ? AND position >= ?",
-        (target_column_id, position),
-    )
-    # Move the card
-    conn.execute(
-        "UPDATE cards SET column_id = ?, position = ? WHERE id = ?",
-        (target_column_id, position, card_id),
-    )
-    conn.commit()
-    conn.close()
     return True
 
 
-def rename_column(column_id: int, title: str) -> bool:
+def delete_card(board_id: int, card_id: int) -> bool:
     conn = get_conn()
-    cur = conn.execute("UPDATE columns SET title = ? WHERE id = ?", (title, column_id))
-    conn.commit()
-    changed = cur.rowcount > 0
-    conn.close()
-    return changed
+    try:
+        with conn:
+            if not _owns_card(conn, board_id, card_id):
+                return False
+            conn.execute("DELETE FROM cards WHERE id = ?", (card_id,))
+    finally:
+        conn.close()
+    return True
+
+
+def move_card(board_id: int, card_id: int, target_column_id: int, position: int) -> bool:
+    conn = get_conn()
+    try:
+        with conn:
+            if not _owns_card(conn, board_id, card_id):
+                return False
+            if not _owns_column(conn, board_id, target_column_id):
+                return False
+            row = conn.execute(
+                "SELECT column_id, position FROM cards WHERE id = ?", (card_id,)
+            ).fetchone()
+            old_column_id = row["column_id"]
+            old_pos = row["position"]
+
+            if old_column_id == target_column_id:
+                # Same-column reorder
+                if position == old_pos:
+                    return True
+                if position > old_pos:
+                    conn.execute(
+                        "UPDATE cards SET position = position - 1 "
+                        "WHERE column_id = ? AND position > ? AND position <= ?",
+                        (old_column_id, old_pos, position),
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE cards SET position = position + 1 "
+                        "WHERE column_id = ? AND position >= ? AND position < ?",
+                        (old_column_id, position, old_pos),
+                    )
+                conn.execute(
+                    "UPDATE cards SET position = ? WHERE id = ?",
+                    (position, card_id),
+                )
+            else:
+                # Cross-column move
+                conn.execute(
+                    "UPDATE cards SET position = position - 1 WHERE column_id = ? AND position > ?",
+                    (old_column_id, old_pos),
+                )
+                conn.execute(
+                    "UPDATE cards SET position = position + 1 WHERE column_id = ? AND position >= ?",
+                    (target_column_id, position),
+                )
+                conn.execute(
+                    "UPDATE cards SET column_id = ?, position = ? WHERE id = ?",
+                    (target_column_id, position, card_id),
+                )
+    finally:
+        conn.close()
+    return True
+
+
+def rename_column(board_id: int, column_id: int, title: str) -> bool:
+    conn = get_conn()
+    try:
+        with conn:
+            if not _owns_column(conn, board_id, column_id):
+                return False
+            conn.execute("UPDATE columns SET title = ? WHERE id = ?", (title, column_id))
+    finally:
+        conn.close()
+    return True

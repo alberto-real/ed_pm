@@ -5,9 +5,41 @@ export type ChatMessage = {
   content: string;
 };
 
+export type CreateCardAction = {
+  type: "create_card";
+  columnId: string;
+  title: string;
+  details?: string;
+};
+
+export type UpdateCardAction = {
+  type: "update_card";
+  cardId: string;
+  title: string;
+  details?: string;
+};
+
+export type DeleteCardAction = {
+  type: "delete_card";
+  cardId: string;
+};
+
+export type MoveCardAction = {
+  type: "move_card";
+  cardId: string;
+  columnId: string;
+  position: number;
+};
+
+export type BoardAction =
+  | CreateCardAction
+  | UpdateCardAction
+  | DeleteCardAction
+  | MoveCardAction;
+
 export type AiChatResponse = {
   message: string;
-  actions: Array<Record<string, unknown>>;
+  actions: BoardAction[];
   board: BoardData;
 };
 

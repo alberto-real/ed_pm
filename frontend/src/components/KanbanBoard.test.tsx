@@ -108,4 +108,37 @@ describe("KanbanBoard", () => {
     await userEvent.click(screen.getByRole("button", { name: /sign out/i }));
     expect(mockLogout).toHaveBeenCalled();
   });
+
+  it("reloads board when addCard fails", async () => {
+    const { addCard, fetchBoard } = await import("@/lib/api");
+    (addCard as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("500"));
+    await renderBoard();
+    const column = getFirstColumn();
+    await userEvent.click(
+      within(column).getByRole("button", { name: /add a card/i })
+    );
+    const titleInput = within(column).getByPlaceholderText(/card title/i);
+    await userEvent.type(titleInput, "Fail card");
+    await userEvent.click(
+      within(column).getByRole("button", { name: /add card/i })
+    );
+    await waitFor(() => {
+      // fetchBoard is called once on mount, then again on error reload
+      expect(fetchBoard).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("reloads board when deleteCard fails", async () => {
+    const { deleteCard, fetchBoard } = await import("@/lib/api");
+    (deleteCard as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("500"));
+    await renderBoard();
+    const column = getFirstColumn();
+    const deleteButton = within(column).getAllByRole("button", {
+      name: /delete/i,
+    })[0];
+    await userEvent.click(deleteButton);
+    await waitFor(() => {
+      expect(fetchBoard).toHaveBeenCalledTimes(2);
+    });
+  });
 });

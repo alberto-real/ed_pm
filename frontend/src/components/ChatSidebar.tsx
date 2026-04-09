@@ -34,13 +34,13 @@ export const ChatSidebar = ({ onBoardUpdate }: ChatSidebarProps) => {
     try {
       const result: AiChatResponse = await aiChat(updatedMessages);
       const assistantMsg: ChatMessage = { role: "assistant", content: result.message };
-      setMessages([...updatedMessages, assistantMsg]);
+      setMessages((prev) => [...prev, assistantMsg]);
       if (result.actions.length > 0) {
         onBoardUpdate(result.board);
       }
     } catch {
       const errorMsg: ChatMessage = { role: "assistant", content: "Sorry, something went wrong." };
-      setMessages([...updatedMessages, errorMsg]);
+      setMessages((prev) => [...prev, errorMsg]);
     } finally {
       setLoading(false);
       scrollToBottom();

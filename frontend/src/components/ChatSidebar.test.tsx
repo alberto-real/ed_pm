@@ -68,4 +68,21 @@ describe("ChatSidebar", () => {
     await userEvent.click(screen.getByRole("button", { name: /close chat/i }));
     expect(screen.queryByText("AI Assistant")).not.toBeInTheDocument();
   });
+
+  it("shows error message when AI chat fails", async () => {
+    const { aiChat } = await import("@/lib/api");
+    (aiChat as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("Network error"));
+
+    render(<ChatSidebar onBoardUpdate={mockOnBoardUpdate} />);
+    await userEvent.click(screen.getByRole("button", { name: /open ai chat/i }));
+
+    const input = screen.getByLabelText("Chat message");
+    await userEvent.type(input, "Hello");
+    await userEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Sorry, something went wrong.")).toBeInTheDocument();
+    });
+    expect(mockOnBoardUpdate).not.toHaveBeenCalled();
+  });
 });

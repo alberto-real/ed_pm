@@ -1,9 +1,11 @@
 import secrets
+import time
 from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import Cookie, FastAPI, Request
 from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel
 
 from ai import chat as ai_chat, chat_with_board
 from db import (
@@ -20,9 +22,42 @@ from db import (
 NEXTJS_URL = "http://127.0.0.1:3000"
 VALID_USERNAME = "user"
 VALID_PASSWORD = "password"
+SESSION_TTL = 86400  # 24 hours
 
-# In-memory session store (maps token -> {username, user_id, board_id})
+# In-memory session store (maps token -> {username, user_id, board_id, created_at})
 sessions: dict[str, dict] = {}
+
+
+# --- Request models ---
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class AddCardRequest(BaseModel):
+    columnId: str
+    title: str
+    details: str = ""
+
+
+class UpdateCardRequest(BaseModel):
+    title: str
+    details: str = ""
+
+
+class MoveCardRequest(BaseModel):
+    columnId: str
+    position: int
+
+
+class RenameColumnRequest(BaseModel):
+    title: str
+
+
+class AiChatRequest(BaseModel):
+    messages: list[dict]
 
 
 @asynccontextmanager
@@ -35,7 +70,13 @@ app = FastAPI(lifespan=lifespan)
 
 
 def _get_session(session: str) -> dict | None:
-    return sessions.get(session)
+    s = sessions.get(session)
+    if not s:
+        return None
+    if time.time() - s["created_at"] > SESSION_TTL:
+        sessions.pop(session, None)
+        return None
+    return s
 
 
 def _parse_id(prefixed_id: str) -> int:
@@ -55,16 +96,18 @@ def health():
 
 
 @app.post("/api/login")
-async def login(request: Request):
-    body = await request.json()
-    username = body.get("username", "")
-    password = body.get("password", "")
-    if username != VALID_USERNAME or password != VALID_PASSWORD:
+def login(body: LoginRequest):
+    if body.username != VALID_USERNAME or body.password != VALID_PASSWORD:
         return JSONResponse({"error": "Invalid credentials"}, status_code=401)
-    user_id, board_id = ensure_user_board(username)
+    user_id, board_id = ensure_user_board(body.username)
     token = secrets.token_hex(16)
-    sessions[token] = {"username": username, "user_id": user_id, "board_id": board_id}
-    resp = JSONResponse({"username": username})
+    sessions[token] = {
+        "username": body.username,
+        "user_id": user_id,
+        "board_id": board_id,
+        "created_at": time.time(),
+    }
+    resp = JSONResponse({"username": body.username})
     resp.set_cookie("session", token, httponly=True, samesite="lax")
     return resp
 
@@ -100,23 +143,22 @@ def api_get_board(session: str = Cookie(default="")):
 
 
 @app.post("/api/cards")
-async def api_add_card(request: Request, session: str = Cookie(default="")):
+def api_add_card(body: AddCardRequest, session: str = Cookie(default="")):
     s = _get_session(session)
     if not s:
         return JSONResponse({"error": "Not authenticated"}, status_code=401)
-    body = await request.json()
-    column_id = _parse_id(body["columnId"])
-    card = add_card(column_id, body["title"], body.get("details", ""))
+    card = add_card(s["board_id"], _parse_id(body.columnId), body.title, body.details)
+    if not card:
+        return JSONResponse({"error": "Column not found"}, status_code=404)
     return card
 
 
 @app.put("/api/cards/{card_id}")
-async def api_update_card(card_id: str, request: Request, session: str = Cookie(default="")):
+def api_update_card(card_id: str, body: UpdateCardRequest, session: str = Cookie(default="")):
     s = _get_session(session)
     if not s:
         return JSONResponse({"error": "Not authenticated"}, status_code=401)
-    body = await request.json()
-    if not update_card(_parse_id(card_id), body["title"], body.get("details", "")):
+    if not update_card(s["board_id"], _parse_id(card_id), body.title, body.details):
         return JSONResponse({"error": "Card not found"}, status_code=404)
     return {"ok": True}
 
@@ -126,20 +168,17 @@ def api_delete_card(card_id: str, session: str = Cookie(default="")):
     s = _get_session(session)
     if not s:
         return JSONResponse({"error": "Not authenticated"}, status_code=401)
-    if not delete_card(_parse_id(card_id)):
+    if not delete_card(s["board_id"], _parse_id(card_id)):
         return JSONResponse({"error": "Card not found"}, status_code=404)
     return {"ok": True}
 
 
 @app.post("/api/cards/{card_id}/move")
-async def api_move_card(card_id: str, request: Request, session: str = Cookie(default="")):
+def api_move_card(card_id: str, body: MoveCardRequest, session: str = Cookie(default="")):
     s = _get_session(session)
     if not s:
         return JSONResponse({"error": "Not authenticated"}, status_code=401)
-    body = await request.json()
-    target_column_id = _parse_id(body["columnId"])
-    position = int(body["position"])
-    if not move_card(_parse_id(card_id), target_column_id, position):
+    if not move_card(s["board_id"], _parse_id(card_id), _parse_id(body.columnId), body.position):
         return JSONResponse({"error": "Card not found"}, status_code=404)
     return {"ok": True}
 
@@ -148,12 +187,11 @@ async def api_move_card(card_id: str, request: Request, session: str = Cookie(de
 
 
 @app.put("/api/columns/{column_id}")
-async def api_rename_column(column_id: str, request: Request, session: str = Cookie(default="")):
+def api_rename_column(column_id: str, body: RenameColumnRequest, session: str = Cookie(default="")):
     s = _get_session(session)
     if not s:
         return JSONResponse({"error": "Not authenticated"}, status_code=401)
-    body = await request.json()
-    if not rename_column(_parse_id(column_id), body["title"]):
+    if not rename_column(s["board_id"], _parse_id(column_id), body.title):
         return JSONResponse({"error": "Column not found"}, status_code=404)
     return {"ok": True}
 
@@ -170,43 +208,55 @@ async def api_ai_test(session: str = Cookie(default="")):
     return {"answer": answer}
 
 
-def _apply_actions(actions: list[dict]):
-    """Apply AI-generated actions to the database."""
+REQUIRED_ACTION_FIELDS = {
+    "create_card": ("columnId", "title"),
+    "update_card": ("cardId", "title"),
+    "delete_card": ("cardId",),
+    "move_card": ("cardId", "columnId"),
+}
+
+
+def _apply_actions(actions: list[dict], board_id: int) -> list[str]:
+    """Apply AI-generated actions to the database. Returns list of warnings."""
+    warnings: list[str] = []
     for action in actions:
         action_type = action.get("type")
-        if action_type == "create_card":
-            add_card(
-                _parse_id(action["columnId"]),
-                action["title"],
-                action.get("details", ""),
-            )
-        elif action_type == "update_card":
-            update_card(
-                _parse_id(action["cardId"]),
-                action["title"],
-                action.get("details", ""),
-            )
-        elif action_type == "delete_card":
-            delete_card(_parse_id(action["cardId"]))
-        elif action_type == "move_card":
-            move_card(
-                _parse_id(action["cardId"]),
-                _parse_id(action["columnId"]),
-                action.get("position", 0),
-            )
+        required = REQUIRED_ACTION_FIELDS.get(action_type)
+        if required is None:
+            warnings.append(f"Skipped unknown action type: {action_type}")
+            continue
+        missing = [f for f in required if f not in action]
+        if missing:
+            warnings.append(f"Skipped {action_type}: missing {', '.join(missing)}")
+            continue
+        try:
+            if action_type == "create_card":
+                add_card(board_id, _parse_id(action["columnId"]), action["title"], action.get("details", ""))
+            elif action_type == "update_card":
+                update_card(board_id, _parse_id(action["cardId"]), action["title"], action.get("details", ""))
+            elif action_type == "delete_card":
+                delete_card(board_id, _parse_id(action["cardId"]))
+            elif action_type == "move_card":
+                move_card(
+                    board_id,
+                    _parse_id(action["cardId"]),
+                    _parse_id(action["columnId"]),
+                    action.get("position", 0),
+                )
+        except (ValueError, KeyError) as e:
+            warnings.append(f"Skipped {action_type}: {e}")
+    return warnings
 
 
 @app.post("/api/ai/chat")
-async def api_ai_chat(request: Request, session: str = Cookie(default="")):
+async def api_ai_chat(body: AiChatRequest, session: str = Cookie(default="")):
     s = _get_session(session)
     if not s:
         return JSONResponse({"error": "Not authenticated"}, status_code=401)
-    body = await request.json()
-    conversation = body.get("messages", [])
     board = get_board(s["board_id"])
-    result = await chat_with_board(board, conversation)
+    result = await chat_with_board(board, body.messages)
     if result["actions"]:
-        _apply_actions(result["actions"])
+        _apply_actions(result["actions"], s["board_id"])
         board = get_board(s["board_id"])
     return {"message": result["message"], "actions": result["actions"], "board": board}
 
