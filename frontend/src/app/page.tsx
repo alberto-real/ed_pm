@@ -3,20 +3,20 @@
 import { useEffect, useState } from "react";
 import { KanbanBoard } from "@/components/KanbanBoard";
 import { LoginForm } from "@/components/LoginForm";
+import * as api from "@/lib/api";
 
 export default function Home() {
   const [user, setUser] = useState<string | null>(null);
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    fetch("/api/me")
-      .then((r) => (r.ok ? r.json() : null))
+    api.checkSession()
       .then((data) => setUser(data?.username ?? null))
       .finally(() => setChecking(false));
   }, []);
 
   const handleLogout = async () => {
-    await fetch("/api/logout", { method: "POST" });
+    await api.logout();
     setUser(null);
   };
 

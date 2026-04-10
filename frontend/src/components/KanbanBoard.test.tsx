@@ -12,21 +12,34 @@ const mockBoard: BoardData = {
     { id: "5", title: "Done", cardIds: [] },
   ],
   cards: {
-    "10": { id: "10", title: "Card A", details: "Details A" },
-    "11": { id: "11", title: "Card B", details: "Details B" },
+    "10": { id: "10", title: "Card A", details: "Details A", description: "", due_date: null, priority: "medium", labels: [] },
+    "11": { id: "11", title: "Card B", details: "Details B", description: "", due_date: "2026-04-15", priority: "high", labels: [{ id: "label-1", name: "Bug", color: "#e74c3c" }] },
   },
 };
 
+const mockBoards = [
+  { id: "board-1", title: "My Board" },
+];
+
 vi.mock("@/lib/api", () => ({
+  fetchBoards: vi.fn(() => Promise.resolve(structuredClone(mockBoards))),
   fetchBoard: vi.fn(() => Promise.resolve(structuredClone(mockBoard))),
-  addCard: vi.fn((_col: string, title: string, details: string) =>
-    Promise.resolve({ id: "99", title, details })
+  fetchLabels: vi.fn(() => Promise.resolve([{ id: "label-1", name: "Bug", color: "#e74c3c" }])),
+  createBoard: vi.fn((title: string) =>
+    Promise.resolve({ id: "board-2", title })
   ),
+  renameBoard: vi.fn(() => Promise.resolve()),
+  deleteBoard: vi.fn(() => Promise.resolve()),
+  addCard: vi.fn((_boardId: string, _col: string, title: string, details: string) =>
+    Promise.resolve({ id: "99", title, details, description: "", due_date: null, priority: "medium", labels: [] })
+  ),
+  updateCard: vi.fn(() => Promise.resolve()),
   deleteCard: vi.fn(() => Promise.resolve()),
   moveCard: vi.fn(() => Promise.resolve()),
   renameColumn: vi.fn(() => Promise.resolve()),
-  updateCard: vi.fn(() => Promise.resolve()),
   aiChat: vi.fn(() => Promise.resolve({ message: "", actions: [], board: {} })),
+  addLabelToCard: vi.fn(() => Promise.resolve()),
+  removeLabelFromCard: vi.fn(() => Promise.resolve()),
 }));
 
 const mockLogout = vi.fn();
@@ -53,14 +66,21 @@ describe("KanbanBoard", () => {
   });
 
   it("renames a column", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     const { renameColumn } = await import("@/lib/api");
-    await renderBoard();
+    render(<KanbanBoard />);
+    await waitFor(() => {
+      expect(screen.getAllByTestId(/column-/i)).toHaveLength(5);
+    });
     const column = getFirstColumn();
     const input = within(column).getByLabelText("Column title");
-    await userEvent.clear(input);
-    await userEvent.type(input, "New Name");
+    await user.clear(input);
+    await user.type(input, "New Name");
     expect(input).toHaveValue("New Name");
-    expect(renameColumn).toHaveBeenCalledWith("1", "New Name");
+    vi.advanceTimersByTime(500);
+    expect(renameColumn).toHaveBeenCalledWith("board-1", "1", "New Name");
+    vi.useRealTimers();
   });
 
   it("adds and removes a card", async () => {
@@ -84,7 +104,7 @@ describe("KanbanBoard", () => {
     await waitFor(() => {
       expect(within(column).getByText("New card")).toBeInTheDocument();
     });
-    expect(addCard).toHaveBeenCalledWith("1", "New card", "Notes");
+    expect(addCard).toHaveBeenCalledWith("board-1", "1", "New card", "Notes");
 
     const deleteButton = within(column).getByRole("button", {
       name: /delete new card/i,
@@ -92,7 +112,7 @@ describe("KanbanBoard", () => {
     await userEvent.click(deleteButton);
 
     expect(within(column).queryByText("New card")).not.toBeInTheDocument();
-    expect(deleteCard).toHaveBeenCalledWith("99");
+    expect(deleteCard).toHaveBeenCalledWith("board-1", "99");
   });
 
   it("shows sign out button when username is provided", async () => {
@@ -123,7 +143,6 @@ describe("KanbanBoard", () => {
       within(column).getByRole("button", { name: /add card/i })
     );
     await waitFor(() => {
-      // fetchBoard is called once on mount, then again on error reload
       expect(fetchBoard).toHaveBeenCalledTimes(2);
     });
   });
@@ -140,5 +159,28 @@ describe("KanbanBoard", () => {
     await waitFor(() => {
       expect(fetchBoard).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it("shows board switcher with board name", async () => {
+    await renderBoard();
+    expect(screen.getByRole("button", { name: /switch board/i })).toHaveTextContent("My Board");
+  });
+
+  it("displays labels and priority on cards", async () => {
+    await renderBoard();
+    // Card B has a Bug label and high priority
+    expect(screen.getByText("Bug")).toBeInTheDocument();
+    // Card B has a due date
+    expect(screen.getByText("2026-04-15")).toBeInTheDocument();
+  });
+
+  it("opens card detail modal on click", async () => {
+    await renderBoard();
+    const cardA = screen.getByTestId("card-10");
+    await userEvent.click(cardA);
+    // Modal should appear with card title in an input
+    expect(screen.getByDisplayValue("Card A")).toBeInTheDocument();
+    expect(screen.getByText("Save")).toBeInTheDocument();
+    expect(screen.getByText("Cancel")).toBeInTheDocument();
   });
 });

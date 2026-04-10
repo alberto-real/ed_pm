@@ -30,19 +30,19 @@ describe("ChatSidebar", () => {
   });
 
   it("shows chat button when closed", () => {
-    render(<ChatSidebar onBoardUpdate={mockOnBoardUpdate} />);
+    render(<ChatSidebar boardId="board-1" onBoardUpdate={mockOnBoardUpdate} />);
     expect(screen.getByRole("button", { name: /open ai chat/i })).toBeInTheDocument();
   });
 
   it("opens sidebar when button is clicked", async () => {
-    render(<ChatSidebar onBoardUpdate={mockOnBoardUpdate} />);
+    render(<ChatSidebar boardId="board-1" onBoardUpdate={mockOnBoardUpdate} />);
     await userEvent.click(screen.getByRole("button", { name: /open ai chat/i }));
     expect(screen.getByText("AI Assistant")).toBeInTheDocument();
     expect(screen.getByLabelText("Chat message")).toBeInTheDocument();
   });
 
   it("sends message and displays response", async () => {
-    render(<ChatSidebar onBoardUpdate={mockOnBoardUpdate} />);
+    render(<ChatSidebar boardId="board-1" onBoardUpdate={mockOnBoardUpdate} />);
     await userEvent.click(screen.getByRole("button", { name: /open ai chat/i }));
 
     const input = screen.getByLabelText("Chat message");
@@ -62,7 +62,7 @@ describe("ChatSidebar", () => {
   });
 
   it("closes sidebar when close is clicked", async () => {
-    render(<ChatSidebar onBoardUpdate={mockOnBoardUpdate} />);
+    render(<ChatSidebar boardId="board-1" onBoardUpdate={mockOnBoardUpdate} />);
     await userEvent.click(screen.getByRole("button", { name: /open ai chat/i }));
     expect(screen.getByText("AI Assistant")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /close chat/i }));
@@ -73,7 +73,7 @@ describe("ChatSidebar", () => {
     const { aiChat } = await import("@/lib/api");
     (aiChat as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("Network error"));
 
-    render(<ChatSidebar onBoardUpdate={mockOnBoardUpdate} />);
+    render(<ChatSidebar boardId="board-1" onBoardUpdate={mockOnBoardUpdate} />);
     await userEvent.click(screen.getByRole("button", { name: /open ai chat/i }));
 
     const input = screen.getByLabelText("Chat message");

@@ -5,10 +5,11 @@ import { aiChat, type AiChatResponse, type ChatMessage } from "@/lib/api";
 import type { BoardData } from "@/lib/kanban";
 
 type ChatSidebarProps = {
+  boardId: string;
   onBoardUpdate: (board: BoardData) => void;
 };
 
-export const ChatSidebar = ({ onBoardUpdate }: ChatSidebarProps) => {
+export const ChatSidebar = ({ boardId, onBoardUpdate }: ChatSidebarProps) => {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -32,7 +33,7 @@ export const ChatSidebar = ({ onBoardUpdate }: ChatSidebarProps) => {
     scrollToBottom();
 
     try {
-      const result: AiChatResponse = await aiChat(updatedMessages);
+      const result: AiChatResponse = await aiChat(boardId, updatedMessages);
       const assistantMsg: ChatMessage = { role: "assistant", content: result.message };
       setMessages((prev) => [...prev, assistantMsg]);
       if (result.actions.length > 0) {
